@@ -1,24 +1,134 @@
-# Orbiteer
+# Orbiteer - Анализатор Финансовых Рисков в Космосе
 
-A Financial Risk Assessment Tool for Space Missions, developed for the NASA Space Apps Challenge.
+Orbiteer — это веб-приложение, предназначенное для анализа и визуализации финансовых рисков, связанных с космическими миссиями. Оно предоставляет интерактивный 3D-интерфейс для оценки рисков столкновения на орбите и помогает пользователям понять потенциальные финансовые потери.
 
-Orbiteer provides an interactive visualization for calculating the expected financial loss and estimated insurance premiums for satellite missions. The tool allows users to adjust mission parameters or input real-world satellite data to see how orbital risks translate into financial metrics.
+## Особенности
 
-## Project Structure
+-   **Интерактивная 3D-визуализация**: Отображение Земли и орбиты спутника с помощью `three.js`.
+-   **Оценка рисков в реальном времени**: Расчет рисков столкновения на основе актуальных данных о космических объектах.
+-   **Финансовый анализ**: Оценка ожидаемых финансовых потерь и страховых премий.
+-   **API на основе Sanic**: Быстрый и асинхронный бэкенд для выполнения сложных расчетов.
 
--   `/visual`: Contains the core of the project — a standalone `index.html` file that includes all the necessary HTML, CSS, and JavaScript for the interactive simulation. No server or build process is required.
+## Структура проекта
 
-## Data & Methodology
+```
+.
+├── api/                  # Модуль API (Sanic)
+│   ├── routes/           # Обработчики маршрутов
+│   │   ├── health.py     # Эндпоинт для проверки работоспособности
+│   │   └── risk.py       # Эндпоинты для расчета рисков
+│   └── __init__.py     # Фабрика приложения Sanic
+├── satellite_tracker/    # Модуль для отслеживания спутников и расчетов
+│   ├── ...               # Скрипты для работы с TLE, расчетов орбит и т.д.
+├── utils/                # Вспомогательные утилиты
+│   ├── distance_calculation.py # Расчет расстояний
+│   └── risk_calculator.py      # Формулы для расчета рисков
+├── index.html            # Фронтенд-приложение
+├── requirements.txt      # Зависимости Python
+├── run_api.py            # Точка входа для запуска API
+└── README.md             # Эта документация
+```
 
-The core of our mathematical model is designed to work with real-world orbital data provided by NASA and NORAD in the **TLE (Two-Line Element set)** format.
+## Установка
 
-The simulation includes a JavaScript-based TLE parser that can analyze standard two-line elements for any cataloged space object. When TLE data is provided, the tool automatically extracts key orbital parameters (like inclination and mean motion) and calculates the satellite's altitude to feed into our risk assessment model.
+1.  **Клонируйте репозиторий:**
+    ```bash
+    git clone <URL-репозитория>
+    cd <имя-директории>
+    ```
 
-This ensures that our financial calculations are grounded in the principles of celestial mechanics and based on the same data formats used by NASA.
+2.  **Создайте и активируйте виртуальное окружение (рекомендуется):**
+    ```bash
+    python -m venv venv
+    source venv/bin/activate  # Для Windows: venv\Scripts\activate
+    ```
 
-To validate the principles and for further development with other NASA datasets, the following API key can be used: `h7EU48c5uABbPKZz76DVoT0lsbF9PUPEpS1Ocfzl`.
+3.  **Установите зависимости:**
+    ```bash
+    pip install -r requirements.txt
+    ```
 
-## How to Use
+## Запуск приложения
 
-1.  Clone the repository.
-2.  Open the file `Orbiteer/visual/index.html` in any modern web browser.
+Для запуска сервера API выполните следующую команду:
+
+```bash
+python run_api.py
+```
+
+Приложение будет доступно по адресу `http://0.0.0.0:8098`. Откройте этот URL в вашем веб-браузере, чтобы увидеть интерфейс Orbiteer.
+
+## API Эндпоинты
+
+API предоставляет следующие конечные точки:
+
+### 1. Расчет риска на орбите
+
+-   **URL**: `/orbit_risk`
+-   **Метод**: `GET`
+-   **Описание**: Рассчитывает финансовый риск столкновения для спутника на орбите.
+-   **Параметры запроса**:
+    -   `height` (float): Высота орбиты (км).
+    -   `A_effective` (float): Эффективная площадь поперечного сечения (м²).
+    -   `T_years` (float): Срок службы миссии (годы).
+    -   `C_full` (float): Полная стоимость миссии.
+    -   `D_lost` (float): Упущенный доход в случае потери спутника.
+-   **Пример запроса**:
+    ```
+    http://127.0.0.1:8098/orbit_risk?height=550&A_effective=1.5&T_years=5&C_full=50000000&D_lost=100000000
+    ```
+-   **Пример ответа**:
+    ```json
+    {
+      "financial_risk": 12345.67,
+      "collision_risk": 0.00012345,
+      "insurance_premium": 18518.51,
+      "risk_class": "B (Low)"
+    }
+    ```
+
+### 2. Расчет риска при запуске
+
+-   **URL**: `/api/takeoff_risk`
+-   **Метод**: `GET`
+-   **Описание**: Рассчитывает финансовый риск столкновения во время фазы запуска.
+-   **Параметры запроса**:
+    -   `lat` (float): Широта места запуска.
+    -   `lon` (float): Долгота места запуска.
+    -   `date` (string): Дата и время запуска (UTC) в формате `YYYY-MM-DDTHH:MM:SS`.
+    -   `H_ascent` (float): Высота активного участка полета (км).
+    -   `A_rocket` (float): Эффективная площадь поперечного сечения ракеты (м²).
+    -   `T_seconds` (float): Продолжительность активного участка полета (секунды).
+    -   `C_total_loss` (float): Суммарные потери при неудачном запуске.
+-   **Пример запроса**:
+    ```
+    http://127.0.0.1:8098/api/takeoff_risk?lat=45.96&lon=63.30&date=2025-10-04T12:00:00&H_ascent=200&A_rocket=15.8&T_seconds=540&C_total_loss=50000000
+    ```
+-   **Пример ответа**:
+    ```json
+    {
+        "financial_risk": 54321.98,
+        "collision_risk": 0.00098765,
+        "insurance_premium": 81482.97,
+        "risk_class": "C (Moderate)",
+        "objects_in_corridor": 5,
+        "launch_corridor_radius_km": 50
+    }
+    ```
+
+### 3. Проверка работоспособности
+
+-   **URL**: `/health`
+-   **Метод**: `GET`
+-   **Описание**: Проверяет, что сервис запущен и работает.
+-   **Пример ответа**:
+    ```json
+    {
+      "status": "OK"
+    }
+    ```
+
+### 3. Swagger/OpenAPI Документация
+
+-   **URL**: `/swagger`
+-   **Описание**: Интерактивная документация API.

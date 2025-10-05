@@ -428,6 +428,51 @@
             border-color: var(--accent-color);
             box-shadow: 0 0 8px var(--accent-color);
         }
+
+        /* TLE Importer Styles */
+        .tle-importer {
+            display: flex;
+            flex-direction: column;
+            gap: 0.75rem;
+            padding-bottom: 1rem;
+        }
+        .tle-importer label {
+            font-size: 0.875rem;
+            font-weight: 500;
+            color: var(--text-secondary);
+        }
+        .tle-importer textarea {
+            background-color: var(--bg-color);
+            border: 1px solid var(--border-color);
+            border-radius: 0.375rem;
+            color: var(--text-primary);
+            padding: 0.5rem;
+            font-family: 'Courier New', Courier, monospace;
+            resize: vertical;
+            min-height: 70px;
+        }
+        .tle-importer button {
+            background-color: rgba(160, 32, 240, 0.2);
+            color: var(--accent-color);
+            border: 1px solid var(--accent-color);
+            padding: 0.5rem 1rem;
+            font-size: 0.875rem;
+            font-weight: 500;
+            border-radius: 0.375rem;
+            cursor: pointer;
+            transition: all 0.2s ease;
+        }
+        .tle-importer button:hover {
+            background-color: var(--accent-color);
+            color: white;
+            box-shadow: 0 0 10px var(--accent-color);
+        }
+        .tle-separator {
+            border: none;
+            height: 1px;
+            background-color: var(--border-color);
+            margin: 0 0 1rem 0;
+        }
     </style>
 </head>
 <body>
@@ -445,7 +490,14 @@
                 <div class="panel-header">
                     <h2 data-lang-key="mission_params">Параметры Миссии</h2>
                 </div>
-                <div id="input-form" class="input-form-content"></div>
+                <div id="input-form" class="input-form-content">
+                    <div class="tle-importer">
+                        <label for="tle-input" data-lang-key="tle_importer_label">Импорт TLE</label>
+                        <textarea id="tle-input" rows="3" placeholder="Вставьте сюда двухстрочный элемент TLE..."></textarea>
+                        <button id="parse-tle-button" data-lang-key="parse_tle_button">Проанализировать TLE</button>
+                    </div>
+                    <hr class="tle-separator">
+                </div>
                 <div class="controls-footer">
                     <div class="toggle-switch">
                         <span data-lang-key="auto_rotate">Авто-вращение</span>
@@ -626,6 +678,8 @@
                     insurance_premium: "Estimated Insurance Premium",
                     update_button: "Calculate",
                     auto_rotate: "Auto-rotate",
+                    tle_importer_label: "TLE Import",
+                    parse_tle_button: "Parse TLE",
                 },
                 ru: {
                     title: "Orbiteer",
@@ -665,6 +719,8 @@
                     insurance_premium: "Оценочная Страховая Премия",
                     update_button: "Рассчитать",
                     auto_rotate: "Авто-вращение",
+                    tle_importer_label: "Импорт TLE",
+                    parse_tle_button: "Проанализировать TLE",
                 }
             };
             
@@ -826,21 +882,62 @@
                 return { grade: 'F', gradeClass: 'grade-F' };
             }
 
+            // --- NEW DYNAMIC CALCULATION LOGIC ---
+
+            /**
+             * Simulates the relative density of space debris based on altitude.
+             * The formula creates a Gaussian distribution centered around a peak altitude.
+             */
+            function getDebrisDensity(alt) {
+                const peakAltitude = 850; // Peak density around 850 km
+                const distributionWidth = 400; // Width of the debris belt
+                return Math.exp(-Math.pow(alt - peakAltitude, 2) / (2 * Math.pow(distributionWidth, 2)));
+            }
+
+            /**
+             * Converts a probability of collision (Poc) into a 0-10 score for grading.
+             */
+            function pocToScore(poc, scaleFactor = 100) {
+                const score = 10 - (poc * scaleFactor);
+                return Math.max(0, Math.min(10, score));
+            }
+
             async function fetchRiskAssessment(params) {
+                // Simulate network delay
                 await new Promise(resolve => setTimeout(resolve, 300));
                 
-                const { altitude, inclination, cross_section, lifespan, cost, revenue_loss } = params;
-                
-                const orbitalScore = Math.max(0, Math.min(10, 10 - (Math.max(0, 10 - ((altitude - 300) / 100)) + Math.abs(90 - inclination) / 9 + (cross_section / 10) * (lifespan / 5))));
-                const orbitalRisk = getGradeFromScore(orbitalScore);
-                
-                const launchRisk = getGradeFromScore(7.5);
-                const reentryRisk = getGradeFromScore(8.5);
+                const { altitude, cross_section, lifespan, cost, revenue_loss } = params;
 
+                // --- 1. Calculate Probabilities of Collision (Poc) for each phase ---
+
+                // Launch Poc: Increases with mission cost (as a proxy for complexity)
+                const complexityFactor = cost / 1000; // Normalized cost (0..1)
+                const launchPoc = 0.015 + (complexityFactor * 0.03); // Ranges from 1.5% to 4.5%
+
+                // Orbital Poc: Based on debris density, satellite size, and mission duration
+                const K = 0.01; // Calibration constant to bring results to a plausible range
+                const debrisDensity = getDebrisDensity(altitude);
+                const orbitalPoc = debrisDensity * (cross_section / 50) * (lifespan / 10) * K;
+
+                // Re-entry Poc: Increases with altitude and lifespan (higher chance of uncontrolled re-entry)
+                const altitudeFactor = altitude / 2000;
+                const lifespanFactor = lifespan / 25;
+                const reentryPoc = 0.001 + (altitudeFactor * lifespanFactor * 0.01); // Ranges from 0.1% to 1.1%
+                
+                // --- DEBUG OUTPUT: Log calculated probabilities to the console ---
+                console.log("--- Расчетные вероятности ---");
+                console.log(`Риск запуска (Poc): ${(launchPoc * 100).toFixed(2)}%`);
+                console.log(`Риск на орбите (Poc): ${(orbitalPoc * 100).toFixed(4)}%`);
+                console.log(`Риск возвращения (Poc): ${(reentryPoc * 100).toFixed(3)}%`);
+                console.log("--------------------------");
+
+                // --- 2. Convert Probabilities back to Grades for display ---
+                const launchRisk = getGradeFromScore(pocToScore(launchPoc, 150));
+                const orbitalRisk = getGradeFromScore(pocToScore(orbitalPoc, 500));
+                const reentryRisk = getGradeFromScore(pocToScore(reentryPoc, 1000));
+
+                // --- 3. Calculate Financials ---
                 const totalValue = cost * 1000000 * (1 + revenue_loss / 100);
-                const orbitalPoc = (10 - orbitalScore) / 500;
-                const launchPoc = 0.02;
-                const reentryPoc = 0.005;
 
                 const financialLoss = {
                     launch: Math.round(totalValue * launchPoc),
@@ -849,13 +946,13 @@
                 };
                 financialLoss.total = financialLoss.launch + financialLoss.orbital + financialLoss.reentry;
                 
-                const insurancePremium = Math.round(financialLoss.total * 0.12);
+                const insurancePremium = Math.round(financialLoss.total * 0.12 + (cost * 1000));
                 
                 return { launch: launchRisk, orbital: orbitalRisk, reentry: reentryRisk, financialLoss, insurancePremium };
             }
 
             function animateCounter(element, targetValue, duration = 1500) {
-                const start = parseInt(element.textContent.replace(/[$\s,]/g, '')) || 0;
+                const start = parseInt(element.textContent.replace(/[$\\s,]/g, '')) || 0;
                 let startTime = null;
                 function animation(currentTime) {
                     if (startTime === null) startTime = currentTime;
@@ -975,6 +1072,45 @@
                 type();
             }
 
+            function parseTle(line1, line2) {
+                // Простые проверки на валидность строк
+                if (line1.length < 69 || line2.length < 69) {
+                    throw new Error("Неверная длина TLE строк.");
+                }
+                if (line1.charAt(0) !== '1' || line2.charAt(0) !== '2') {
+                    throw new Error("Строки должны начинаться с '1 ' и '2 '.");
+                }
+
+                // Извлекаем наклонение (Inclination)
+                const inclination = parseFloat(line2.substring(8, 16));
+                
+                // Извлекаем среднее движение (Mean Motion)
+                const meanMotion = parseFloat(line2.substring(52, 63)); // Витков в день
+                if (isNaN(inclination) || isNaN(meanMotion)) {
+                     throw new Error("Не удалось извлечь числовые значения из TLE.");
+                }
+
+                // Рассчитываем высоту орбиты из среднего движения
+                // Формула основана на гравитационном параметре Земли (μ)
+                const mu = 398600.4418; // км^3/с^2
+                const earthRadius = 6371; // км
+                const secondsInDay = 86400;
+                
+                // Переводим среднее движение из "витков в день" в "радианы в секунду"
+                const meanMotionRadPerSec = (meanMotion * 2 * Math.PI) / secondsInDay;
+                
+                // Рассчитываем большую полуось (a)
+                const semiMajorAxis = Math.cbrt(mu / Math.pow(meanMotionRadPerSec, 2));
+                
+                // Высота = большая полуось - радиус Земли
+                const altitude = semiMajorAxis - earthRadius;
+
+                return {
+                    inclination: inclination,
+                    altitude: altitude
+                };
+            }
+
             function showTooltip(e) {
                 const target = e.target;
                 const key = target.getAttribute('data-tooltip-key');
@@ -1017,6 +1153,40 @@
             document.getElementById('auto-rotate-toggle').addEventListener('change', e => {
                 if(appState.isSoundEnabled && sounds.uiSynth) sounds.uiSynth.triggerAttackRelease('G4', '8n');
                 appState.isAutoRotating = e.target.checked;
+            });
+
+            document.getElementById('parse-tle-button').addEventListener('click', () => {
+                const tleString = document.getElementById('tle-input').value.trim();
+                const lines = tleString.split('\n').filter(line => line.length > 0);
+                
+                if (lines.length < 2) {
+                    alert('Ошибка: TLE должен состоять как минимум из двух строк.');
+                    return;
+                }
+
+                try {
+                    const parsedData = parseTle(lines[0], lines[1]);
+                    const { altitude, inclination } = parsedData;
+
+                    // Обновляем состояние приложения
+                    appState.params.altitude = Math.round(altitude);
+                    appState.params.inclination = Math.round(inclination);
+
+                    // Обновляем значения на слайдерах и в текстовых полях
+                    document.getElementById('altitude').value = appState.params.altitude;
+                    document.getElementById('inclination').value = appState.params.inclination;
+                    
+                    document.getElementById('value-altitude').textContent = `${appState.params.altitude} ${translations[appState.lang]['unit_km']}`;
+                    document.getElementById('value-inclination').textContent = `${appState.params.inclination} ${translations[appState.lang]['unit_deg']}`;
+
+                    if(appState.isSoundEnabled && sounds.uiSynth) sounds.uiSynth.triggerAttackRelease('C5', '8n');
+                    
+                    // Запускаем полный пересчет с новыми данными
+                    updateApp();
+
+                } catch (error) {
+                    alert(`Ошибка парсинга TLE: ${error.message}`);
+                }
             });
             
             initGlobe();
